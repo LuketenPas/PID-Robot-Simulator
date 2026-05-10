@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PID Robot Simulator</title>
+    <style>
+        input[type="range"] {
+            width: 800px;
+            height: 20px;
+        }
+        label {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="robotCanvas" width="1200" height="600" style="border:1px solid black; display:inline-block;"></canvas>
+    <canvas id="graphCanvas" width="600" height="600" style="border:1px solid black; display:inline-block;"></canvas>
+    <br>
+    <label>kP: </label>
+    <input type="number" id="kpValue" value="0.01" step="0.001" style="width:80px; font-size:20px;">
+    <input type="range" id="kpSlider" min="0" max="1" step="0.001" value="0.01">
+    <br>
+    <label>kI: </label>
+    <input type="number" id="kiValue" value="0.0" step="0.0001" style="width:80px; font-size:20px;">
+    <input type="range" id="kiSlider" min="0" max="0.01" step=".0001" value="0">
+    <br>
+    <label>kD: </label>
+    <input type="number" id="kdValue" value="0.0" step="0.0001" style="width:80px; font-size:20px;">
+    <input type="range" id="kdSlider" min="0" max="2.0" step=".0001" value="0">
+
+    <script>
+        var robotCanvas = document.getElementById("robotCanvas");
+        var robotCtx = robotCanvas.getContext("2d");
+        var graphCanvas = document.getElementById("graphCanvas");
+        var graphCtx = graphCanvas.getContext("2d");
+
+        var kP = .01;
+        var kI = 0.0;
+        var kD = 0.0;
+
+        var targetX = 600;
+        var targetY = 300;
+        var robotX = 0;
+        var robotY = 0;
+        var previousErrorX = 0;
+        var previousErrorY = 0;
+        var integralX = 0;
+        var integralY = 0;
+        var velocityX = 0;
+        var velocityY = 0;
+
+        var setpoint = 0; 
+        var valueHistory = []; 
+        var dirX = 0;
+        var dirY = 0;
+        var graphPaused = false;
+
+        var errorTolerance = 2;
+        var velocityTolerance = 0.05;
+
+        robotCanvas.addEventListener("click", function(event) {
+            var rect = robotCanvas.getBoundingClientRect();
+            targetX = event.clientX - rect.left;
+            targetY = event.clientY - rect.top;
+            var dx = targetX - robotX;
+            var dy = targetY - robotY;
+            setpoint = Math.sqrt(dx * dx + dy * dy);
+            dirX = dx / setpoint;
+            dirY = dy / setpoint;
+            valueHistory = [];
+            graphPaused = false;
+        });
+
+        document.getElementById("kpValue").addEventListener("input", function() {
+            var parsed = parseFloat(this.value);
+            if (!isNaN(parsed)) {
+                kP = parsed;
+                document.getElementById("kpSlider").value = parsed;
+            }
+        });
+
+        document.getElementById("kpSlider").addEventListener("input", function() {
+            var parsed = parseFloat(this.value);
+            if (!isNaN(parsed)) {
+                kP = parsed;
+                document.getElementById("kpValue").value = parsed;
+            }
+        });
+
+        document.getElementById("kiValue").addEventListener("input", function() {
+            var parsed = parseFloat(this.value);
+            if (!isNaN(parsed)) {
+                kI = parsed;
+                document.getElementById("kiSlider").value = parsed;
+            }
+        });
+
+        document.getElementById("kiSlider").addEventListener("input", function() {
+            var parsed = parseFloat(this.value);
+            if (!isNaN(parsed)) {
+                kI = parsed;
+                document.getElementById("kiValue").value = parsed;
+            }
+        });
+
+        document.getElementById("kdValue").addEventListener("input", function() {
+            var parsed = parseFloat(this.value);
+            if (!isNaN(parsed)) {
+                kD = parsed;
+                document.getElementById("kdSlider").value = parsed;
+            }
+        });
+
+        document.getElementById("kdSlider").addEventListener("input", function() {
+            var parsed = parseFloat(this.value);
+            if (!isNaN(parsed)) {
+                kD = parsed;
+                document.getElementById("kdValue").value = parsed;
+            }
+        });
+
+        function calculatePIDX() {
+            var error = targetX - robotX;
+            var maxIntegral = 50;
+            integralX += error;
+            integralX = Math.max(-maxIntegral, Math.min(maxIntegral, integralX));
+            var derivative = error - previousErrorX;
+            previousErrorX = error;
+
+            return (kP * error) + (kI * integralX) + (kD * derivative);
+        }
+
+        function calculatePIDY() {
+            var error = targetY - robotY;
+            var maxIntegral = 50;
+            integralY += error;
+            integralY = Math.max(-maxIntegral, Math.min(maxIntegral, integralY));
+            var derivative = error - previousErrorY;
+            previousErrorY = error;
+
+            return (kP * error) + (kI * integralY) + (kD * derivative);
+        }
+
+        function drawGraph() {
+            var zeroY = 200;
+            var graphSpeed = 6;
+            var zoom = 1;
+
+            var legendY = graphCanvas.height - 70;
+
+            graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+            // Draw zero-error / setpoint line
+            graphCtx.beginPath();
+            graphCtx.setLineDash([5, 5]);
+            graphCtx.moveTo(0, zeroY);
+            graphCtx.lineTo(graphCanvas.width, zeroY);
+            graphCtx.strokeStyle = "cyan";
+            graphCtx.stroke();
+            graphCtx.setLineDash([]);
+
+            // Draw error graph
+            graphCtx.beginPath();
+
+            for (var i = 0; i < valueHistory.length; i++) {
+                var x = i * graphSpeed;
+
+                var y = zeroY + (valueHistory[i] / setpoint) * (legendY - zeroY) * zoom;
+
+                y = Math.max(0, Math.min(legendY - 10, y));
+
+                if (i === 0) {
+                    graphCtx.moveTo(x, y);
+                } else {
+                    graphCtx.lineTo(x, y);
+                }
+            }
+
+            graphCtx.strokeStyle = "green";
+            graphCtx.stroke();
+
+            // Divider between graph and key
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = "black";
+            graphCtx.moveTo(0, legendY);
+            graphCtx.lineTo(graphCanvas.width, legendY);
+            graphCtx.stroke();
+
+            // Key underneath graph
+            graphCtx.font = "18px Arial";
+            graphCtx.fillStyle = "black";
+            graphCtx.fillText("Graph Key", 20, legendY + 25);
+
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = "green";
+            graphCtx.moveTo(150, legendY + 20);
+            graphCtx.lineTo(200, legendY + 20);
+            graphCtx.stroke();
+
+            graphCtx.fillStyle = "black";
+            graphCtx.fillText("Error", 210, legendY + 26);
+
+            graphCtx.beginPath();
+            graphCtx.setLineDash([5, 5]);
+            graphCtx.strokeStyle = "cyan";
+            graphCtx.moveTo(300, legendY + 20);
+            graphCtx.lineTo(350, legendY + 20);
+            graphCtx.stroke();
+            graphCtx.setLineDash([]);
+
+            graphCtx.fillStyle = "black";
+            graphCtx.fillText("Setpoint / zero error", 360, legendY + 26);
+        }
+
+        function update() {
+            robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height)
+            robotCtx.beginPath();
+            robotCtx.arc(targetX, targetY, 10, 0, Math.PI * 2);
+            robotCtx.fillStyle = "red";
+            robotCtx.fill();
+            velocityX += calculatePIDX();
+            velocityY += calculatePIDY();
+            velocityX *= 0.8;
+            velocityY *= 0.8;
+            robotX += velocityX;
+            robotY += velocityY;
+            robotCtx.fillStyle = "blue";
+            robotCtx.fillRect(robotX-20, robotY-20, 40, 40);
+            var errorX = targetX - robotX;
+            var errorY = targetY - robotY;
+
+            var distanceError = Math.sqrt(errorX * errorX + errorY * errorY);
+            var velocityMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+
+            var currentValue = errorX * dirX + errorY * dirY;
+
+            if (!graphPaused) {
+                valueHistory.push(currentValue);
+
+                if (valueHistory.length > graphCanvas.width / 4) {
+                    valueHistory.shift();
+                }
+
+                // Pause only when the robot is close AND nearly stopped
+                if (distanceError < errorTolerance && velocityMagnitude < velocityTolerance) {
+                    graphPaused = true;
+                }
+            }
+
+            drawGraph();
+            requestAnimationFrame(update);
+        }
+
+        update();
+    </script>
+</body>
+</html>
