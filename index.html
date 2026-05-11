@@ -4,96 +4,412 @@
     <title>PID Robot Simulator</title>
 
     <style>
+        :root {
+            --page-bg-top: #07110f;
+            --page-bg-bottom: #101b22;
+            --surface: #14211f;
+            --surface-soft: #0d1817;
+            --border: #2d4541;
+            --text: #edf7f4;
+            --muted-text: #b4c7c2;
+            --primary: #4da3ff;
+            --primary-dark: #9dccff;
+            --target: #ff8a3d;
+            --graph: #9bd66d;
+            --zero-line: #f4cf4d;
+        }
+
+        /*
+            Basic page styling for the simulator. The project is kept in one
+            HTML file, so these rules define both the layout and control sizes.
+        */
+        html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--page-bg-top);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 12px;
+            overflow: hidden;
+            color: var(--text);
+            font-family: Arial, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(77, 163, 255, 0.12), transparent 360px),
+                linear-gradient(180deg, var(--page-bg-top), var(--page-bg-bottom));
+        }
+
         input[type="range"] {
-            width: 800px;
+            width: 100%;
+            min-width: 120px;
             height: 20px;
+            accent-color: var(--primary);
         }
 
         label {
-            font-size: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--primary-dark);
         }
 
         input[type="number"] {
-            width: 90px;
+            width: 74px;
+            font-size: 16px;
+            color: var(--text);
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 3px 6px;
+        }
+
+        input[type="number"]:focus {
+            border-color: var(--primary);
+            outline: 2px solid rgba(77, 163, 255, 0.24);
+        }
+
+        canvas {
+            display: block;
+            min-width: 0;
+            min-height: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background-color: var(--surface);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+        }
+
+        #robotCanvas,
+        #graphCanvas {
+            width: 100%;
+            height: 100%;
+            background-color: var(--surface-soft);
+        }
+
+        /* Place the robot canvas next to the graph/information area. */
+        .mainArea {
+            display: grid;
+            grid-template-columns: minmax(0, 7fr) minmax(420px, 5fr);
+            gap: 12px;
+            flex: 1 1 auto;
+            width: 100%;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* Keep the graph and explanation panel aligned as one right-side column. */
+        .graphAndInfo {
+            display: grid;
+            grid-template-rows: minmax(0, 1fr) auto;
+            gap: 10px;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* Compact reference panel that explains PID concepts while tuning. */
+        #infoBox {
+            width: 100%;
+            height: auto;
+            min-height: 0;
+            align-self: start;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px 8px;
+            font-family: Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.28;
+            color: var(--text);
+            background-color: var(--surface);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+        }
+
+        #infoBox h2 {
+            margin-top: 0;
+            margin-bottom: 6px;
             font-size: 20px;
+            color: var(--primary-dark);
+        }
+
+        #infoBox h3 {
+            margin-top: 8px;
+            margin-bottom: 4px;
+            font-size: 16px;
+            color: var(--target);
+        }
+
+        #infoBox p {
+            margin-top: 4px;
+            margin-bottom: 6px;
+            color: var(--muted-text);
+        }
+
+        #infoBox ul {
+            margin-top: 4px;
+            margin-bottom: 0;
+            padding-left: 18px;
+        }
+
+        #infoBox li {
+            margin-bottom: 4px;
+        }
+
+        /* The PID controls sit below the canvases. */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(3, auto 74px minmax(120px, 1fr));
+            align-items: center;
+            gap: 6px 10px;
+            flex: 0 0 auto;
+            width: 100%;
+            min-height: 0;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background-color: var(--surface);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+        }
+
+        .controls br {
+            display: none;
         }
     </style>
 </head>
 
 <body>
-    <canvas id="robotCanvas" width="1200" height="600" style="border:1px solid black; display:inline-block;"></canvas>
-    <canvas id="graphCanvas" width="600" height="600" style="border:1px solid black; display:inline-block;"></canvas>
+    <!-- Main simulator workspace: robot motion on the left, graph and notes on the right. -->
+    <div class="mainArea">
+        <canvas id="robotCanvas" width="900" height="600"></canvas>
 
-    <br>
+        <div class="graphAndInfo">
+            <canvas id="graphCanvas" width="560" height="420"></canvas>
 
-    <label>kP: </label>
-    <input type="number" id="kpValue" min="0" max="1" value="0.01" step="0.001">
-    <input type="range" id="kpSlider" min="0" max="1" step="0.001" value="0.01">
+            <!-- In-page user documentation for the simulator and PID terminology. -->
+            <div id="infoBox">
+                <h2>PID Robot Simulator</h2>
 
-    <br>
+                <h3>What is PID?</h3>
+                <p>
+                    PID stands for Proportional, Integral, and Derivative. It moves a system toward a
+                    target and helps it stay there.
+                </p>
 
-    <label>kI: </label>
-    <input type="number" id="kiValue" min="0" max="0.01" value="0.0" step="0.00001">
-    <input type="range" id="kiSlider" min="0" max="0.01" step="0.00001" value="0">
+                <ul>
+                    <li><strong>P:</strong> Reacts to how far the robot is from the target.</li>
+                    <li><strong>I:</strong> Reacts to error that builds up over time.</li>
+                    <li><strong>D:</strong> Reacts to how quickly the error is changing.</li>
+                </ul>
 
-    <br>
+                <h3>What is PID tuning?</h3>
+                <p>
+                    PID tuning is adjusting kP, kI, and kD to get the response you want. More kP
+                    usually reacts faster, kI fixes small leftover error, and kD helps calm overshoot
+                    and shaking.
+                </p>
+                <p>
+                    Good tuning reaches the target quickly and settles smoothly. Bad tuning can be
+                    slow, overshoot the target, or oscillate back and forth.
+                </p>
 
-    <label>kD: </label>
-    <input type="number" id="kdValue" min="0" max="1.5" value="0.08" step="0.001">
-    <input type="range" id="kdSlider" min="0" max="1.5" step="0.001" value="0.08">
+                <h3>What is PID used for?</h3>
+                <p>
+                    PID control is used for robot driving, flywheels, arms, elevators, balancing,
+                    thermostats, cruise control, drones, and many other automatic systems.
+                </p>
+
+                <h3>How to use this simulator</h3>
+                <ul>
+                    <li>Click anywhere on the field to choose a new target.</li>
+                    <li>The square yellow FRC robot drives toward the target.</li>
+                    <li>The four wheels use a symmetric swerve-style pattern.</li>
+                    <li>The orange circle is the target position.</li>
+                    <li>Use the sliders or number boxes to tune kP, kI, and kD.</li>
+                    <li>The graph shows error; the yellow dashed line is zero error.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tunable PID gains. Each value has both precise number input and a slider. -->
+    <div class="controls">
+        <label>kP: </label>
+        <input type="number" id="kpValue" min="0" max="1" value="0.01" step="0.001">
+        <input type="range" id="kpSlider" min="0" max="1" step="0.001" value="0.01">
+
+        <br>
+
+        <label>kI: </label>
+        <input type="number" id="kiValue" min="0" max="0.01" value="0.0" step="0.00001">
+        <input type="range" id="kiSlider" min="0" max="0.01" step="0.00001" value="0">
+
+        <br>
+
+        <label>kD: </label>
+        <input type="number" id="kdValue" min="0" max="1.5" value="0.08" step="0.001">
+        <input type="range" id="kdSlider" min="0" max="1.5" step="0.001" value="0.08">
+    </div>
 
     <script>
+        /*
+            PID Robot Simulator
+
+            This script animates a simple robot marker toward a click-selected
+            target. The PID controller runs separately on X and Y axes, while the
+            graph displays the remaining error along the original path to target.
+        */
+
+        // Canvas references used for drawing the robot scene and error graph.
         var robotCanvas = document.getElementById("robotCanvas");
         var robotCtx = robotCanvas.getContext("2d");
 
         var graphCanvas = document.getElementById("graphCanvas");
         var graphCtx = graphCanvas.getContext("2d");
 
-        // PID values
+        /*
+            Match each canvas's drawing buffer to its on-screen size. Without
+            this, CSS can stretch the canvas and make the field, robot, and graph
+            key look squished.
+        */
+        function resizeCanvasToDisplaySize(canvas) {
+            var rect = canvas.getBoundingClientRect();
+            var width = Math.max(1, Math.round(rect.width));
+            var height = Math.max(1, Math.round(rect.height));
+
+            if (canvas.width === width && canvas.height === height) {
+                return false;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            return true;
+        }
+
+        /*
+            Resize the robot canvas and scale simulation state with it so the
+            robot and target stay in the same relative field positions.
+        */
+        function resizeRobotCanvasToDisplaySize() {
+            var rect = robotCanvas.getBoundingClientRect();
+            var width = Math.max(1, Math.round(rect.width));
+            var height = Math.max(1, Math.round(rect.height));
+
+            if (robotCanvas.width === width && robotCanvas.height === height) {
+                return false;
+            }
+
+            var scaleX = width / robotCanvas.width;
+            var scaleY = height / robotCanvas.height;
+
+            robotX *= scaleX;
+            robotY *= scaleY;
+            targetX *= scaleX;
+            targetY *= scaleY;
+
+            velocityX *= scaleX;
+            velocityY *= scaleY;
+            previousErrorX *= scaleX;
+            previousErrorY *= scaleY;
+            integralX *= scaleX;
+            integralY *= scaleY;
+
+            if (setpoint !== 0) {
+                setpoint *= Math.sqrt(scaleX * scaleY);
+            }
+
+            robotCanvas.width = width;
+            robotCanvas.height = height;
+            return true;
+        }
+
+        function resizeCanvasesToDisplaySize() {
+            resizeRobotCanvasToDisplaySize();
+            resizeCanvasToDisplaySize(graphCanvas);
+        }
+
+        // PID gain values. Sliders and number inputs update these during runtime.
         var kP = 0.01;
         var kI = 0.0;
         var kD = 0.08;
 
-        // Target position
+        // Target position in robot canvas coordinates.
         var targetX = 600;
         var targetY = 300;
 
-        // Robot position
-        var robotX = 0;
-        var robotY = 0;
+        // Robot position in robot canvas coordinates.
+        var robotX = 90;
+        var robotY = 90;
 
-        // PID memory
+        // PID memory for derivative and integral terms on each axis.
         var previousErrorX = 0;
         var previousErrorY = 0;
 
         var integralX = 0;
         var integralY = 0;
 
-        // Robot velocity
+        // Robot velocity is changed by PID output, then softened by damping.
         var velocityX = 0;
         var velocityY = 0;
 
-        // Graph variables
+        // Graph state: setpoint is the initial distance to the current target.
         var setpoint = 0;
         var valueHistory = [];
 
+        // Unit direction from the robot's start point to the selected target.
         var dirX = 0;
         var dirY = 0;
 
+        // Stops collecting graph points once the robot has settled.
         var graphPaused = false;
 
-        // Settling settings
+        // Settling settings define when the graph should stop recording movement.
         var errorTolerance = 2;
         var velocityTolerance = 0.05;
 
-        // Graph settings
+        // Graph settings control how quickly the trace scrolls and its vertical scale.
         var graphSpeed = 4;
-        var graphZoom = 1.0;
+        var graphZoom = 1.25;
 
+        // Shared drawing palette for the canvas-based parts of the simulator.
+        var canvasColors = {
+            robot: "#f4cf4d",
+            robotBorder: "#9f7a12",
+            robotFrame: "#8d969b",
+            robotFrameBorder: "#d3d8da",
+            robotShadow: "rgba(0, 0, 0, 0.38)",
+            robotWheel: "#0a0f14",
+            target: "#ff8a3d",
+            targetGlow: "rgba(255, 138, 61, 0.25)",
+            graphLine: "#9bd66d",
+            zeroLine: "#f4cf4d",
+            divider: "#334d48",
+            grid: "#1d302d",
+            text: "#edf7f4",
+            fieldCarpet: "#173f32",
+            fieldStripe: "rgba(255, 255, 255, 0.035)"
+        };
+
+        /*
+            Keep a value within a fixed range. This is used for input validation,
+            graph bounds, and integral windup protection.
+        */
         function clamp(value, min, max) {
             return Math.max(min, Math.min(max, value));
         }
 
+        /*
+            Clear all accumulated PID state when a new target is chosen. Without
+            this reset, old integral/derivative data would affect the next move.
+        */
         function resetPIDMemory() {
             previousErrorX = 0;
             previousErrorY = 0;
@@ -105,6 +421,11 @@
             velocityY = 0;
         }
 
+        /*
+            Connect one numeric input and one range slider to the same PID value.
+            The input event updates while typing, and the change event clamps the
+            final value after editing is finished.
+        */
         function setupPIDInput(numberId, sliderId, min, max, updateValue) {
             var numberInput = document.getElementById(numberId);
             var sliderInput = document.getElementById(sliderId);
@@ -123,8 +444,6 @@
                 var parsed = parseFloat(this.value);
 
                 if (!isNaN(parsed)) {
-                    // While typing, update the PID value, but do not rewrite the box.
-                    // Rewriting the box here is what caused decimals to auto-jump.
                     updateValue(parsed);
                 }
             });
@@ -153,11 +472,15 @@
             });
         }
 
+        /*
+            A click selects the next target. The graph uses the initial distance
+            and direction to plot signed error along that specific movement path.
+        */
         robotCanvas.addEventListener("click", function(event) {
             var rect = robotCanvas.getBoundingClientRect();
 
-            targetX = event.clientX - rect.left;
-            targetY = event.clientY - rect.top;
+            targetX = (event.clientX - rect.left) * (robotCanvas.width / rect.width);
+            targetY = (event.clientY - rect.top) * (robotCanvas.height / rect.height);
 
             var dx = targetX - robotX;
             var dy = targetY - robotY;
@@ -173,10 +496,13 @@
 
             resetPIDMemory();
 
-            valueHistory = [];
+            // Seed the graph with the full starting error before the robot moves.
+            // This keeps very fast PID settings from skipping the visible start.
+            valueHistory = [setpoint];
             graphPaused = false;
         });
 
+        // Wire the controls to the live PID gains.
         setupPIDInput("kpValue", "kpSlider", 0, 1, function(value) {
             kP = value;
         });
@@ -189,6 +515,10 @@
             kD = value;
         });
 
+        /*
+            Calculate one frame of PID output for horizontal movement.
+            Integral is clamped to reduce windup when the robot is far away.
+        */
         function calculatePIDX() {
             var error = targetX - robotX;
 
@@ -203,6 +533,10 @@
             return (kP * error) + (kI * integralX) + (kD * derivative);
         }
 
+        /*
+            Calculate one frame of PID output for vertical movement.
+            This mirrors calculatePIDX, but stores independent Y-axis memory.
+        */
         function calculatePIDY() {
             var error = targetY - robotY;
 
@@ -217,18 +551,114 @@
             return (kP * error) + (kI * integralY) + (kD * derivative);
         }
 
+        /*
+            Draw a simple striped turf background. This keeps the driving area
+            visually grounded without adding specific field elements.
+        */
+        function drawDrivingSurface() {
+            var width = robotCanvas.width;
+            var height = robotCanvas.height;
+
+            robotCtx.save();
+
+            robotCtx.fillStyle = canvasColors.fieldCarpet;
+            robotCtx.fillRect(0, 0, width, height);
+
+            // Subtle grass/turf mowing stripes.
+            robotCtx.fillStyle = canvasColors.fieldStripe;
+            for (var stripeX = 0; stripeX < width; stripeX += 80) {
+                robotCtx.fillRect(stripeX, 0, 40, height);
+            }
+
+            robotCtx.restore();
+        }
+
+        /*
+            Draw one simplified swerve wheel in robot-local coordinates. The
+            angle is fixed relative to the robot frame for a symmetric pattern.
+        */
+        function drawSwerveModule(moduleX, moduleY, wheelAngle) {
+            robotCtx.save();
+            robotCtx.translate(moduleX, moduleY);
+            robotCtx.rotate(wheelAngle);
+
+            robotCtx.fillStyle = canvasColors.robotWheel;
+            robotCtx.fillRect(-15, -6, 30, 12);
+
+            robotCtx.restore();
+        }
+
+        /*
+            Draw a symmetric square robot centered on the simulated position.
+            This avoids implying a heading controller that the simulator does not
+            actually model.
+        */
+        function drawRobot(x, y) {
+            var robotSize = 78;
+            var halfSize = robotSize / 2;
+            var moduleInset = 25;
+
+            robotCtx.save();
+            robotCtx.translate(x, y);
+
+            robotCtx.fillStyle = canvasColors.robotShadow;
+            robotCtx.fillRect(-halfSize - 9, -halfSize - 9, robotSize + 18, robotSize + 18);
+
+            // Square FRC-style bumper and chassis frame.
+            robotCtx.fillStyle = canvasColors.robot;
+            robotCtx.fillRect(-halfSize - 5, -halfSize - 5, robotSize + 10, robotSize + 10);
+            robotCtx.strokeStyle = canvasColors.robotBorder;
+            robotCtx.lineWidth = 3;
+            robotCtx.strokeRect(-halfSize - 5, -halfSize - 5, robotSize + 10, robotSize + 10);
+
+            robotCtx.fillStyle = canvasColors.robotFrame;
+            robotCtx.fillRect(-halfSize, -halfSize, robotSize, robotSize);
+            robotCtx.strokeStyle = canvasColors.robotFrameBorder;
+            robotCtx.strokeRect(-halfSize, -halfSize, robotSize, robotSize);
+
+            // Four independent swerve wheels in a symmetric pinwheel pattern.
+            drawSwerveModule(-moduleInset, -moduleInset, Math.PI / 4);
+            drawSwerveModule(moduleInset, -moduleInset, -Math.PI / 4);
+            drawSwerveModule(-moduleInset, moduleInset, -Math.PI / 4);
+            drawSwerveModule(moduleInset, moduleInset, Math.PI / 4);
+
+            robotCtx.restore();
+        }
+
+        /*
+            Redraw the error graph and its legend. The graph's yellow dashed line
+            is zero error; the green trace approaches it as the robot settles.
+        */
         function drawGraph() {
-            var zeroY = 200;
-            var legendY = graphCanvas.height - 70;
+            var legendY = graphCanvas.height - 54;
+            var zeroY = legendY / 2;
 
             graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+            // Draw a subtle grid so the graph reads clearly against the new palette.
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = canvasColors.grid;
+            graphCtx.lineWidth = 1;
+
+            for (var gridX = 0; gridX <= graphCanvas.width; gridX += 42) {
+                graphCtx.moveTo(gridX, 0);
+                graphCtx.lineTo(gridX, legendY);
+            }
+
+            for (var gridY = 30; gridY <= legendY; gridY += 30) {
+                graphCtx.moveTo(0, gridY);
+                graphCtx.lineTo(graphCanvas.width, gridY);
+            }
+
+            graphCtx.stroke();
 
             // Draw zero-error / setpoint line
             graphCtx.beginPath();
             graphCtx.setLineDash([5, 5]);
             graphCtx.moveTo(0, zeroY);
             graphCtx.lineTo(graphCanvas.width, zeroY);
-            graphCtx.strokeStyle = "cyan";
+            graphCtx.strokeStyle = canvasColors.zeroLine;
+            graphCtx.lineWidth = 2;
             graphCtx.stroke();
             graphCtx.setLineDash([]);
 
@@ -240,7 +670,11 @@
 
                 var y = zeroY + (valueHistory[i] / setpoint) * (legendY - zeroY) * graphZoom;
 
-                y = clamp(y, 0, legendY - 10);
+                if (i === 0 && valueHistory[i] === setpoint) {
+                    y = legendY - 3;
+                } else {
+                    y = clamp(y, 0, legendY - 3);
+                }
 
                 if (i === 0) {
                     graphCtx.moveTo(x, y);
@@ -249,49 +683,68 @@
                 }
             }
 
-            graphCtx.strokeStyle = "green";
+            graphCtx.strokeStyle = canvasColors.graphLine;
+            graphCtx.lineWidth = 3;
             graphCtx.stroke();
 
             // Divider between graph and key
             graphCtx.beginPath();
-            graphCtx.strokeStyle = "black";
+            graphCtx.strokeStyle = canvasColors.divider;
+            graphCtx.lineWidth = 1;
             graphCtx.moveTo(0, legendY);
             graphCtx.lineTo(graphCanvas.width, legendY);
             graphCtx.stroke();
 
             // Graph key
-            graphCtx.font = "18px Arial";
-            graphCtx.fillStyle = "black";
-            graphCtx.fillText("Graph Key", 20, legendY + 25);
+            graphCtx.font = "14px Arial";
+            graphCtx.fillStyle = canvasColors.text;
+            graphCtx.fillText("Graph Key", 12, legendY + 21);
 
             graphCtx.beginPath();
-            graphCtx.strokeStyle = "green";
-            graphCtx.moveTo(150, legendY + 20);
-            graphCtx.lineTo(200, legendY + 20);
+            graphCtx.strokeStyle = canvasColors.graphLine;
+            graphCtx.lineWidth = 3;
+            graphCtx.moveTo(95, legendY + 16);
+            graphCtx.lineTo(130, legendY + 16);
             graphCtx.stroke();
 
-            graphCtx.fillStyle = "black";
-            graphCtx.fillText("Error", 210, legendY + 26);
+            graphCtx.fillStyle = canvasColors.text;
+            graphCtx.fillText("Error", 138, legendY + 21);
 
             graphCtx.beginPath();
             graphCtx.setLineDash([5, 5]);
-            graphCtx.strokeStyle = "cyan";
-            graphCtx.moveTo(300, legendY + 20);
-            graphCtx.lineTo(350, legendY + 20);
+            graphCtx.strokeStyle = canvasColors.zeroLine;
+            graphCtx.lineWidth = 2;
+            graphCtx.moveTo(205, legendY + 16);
+            graphCtx.lineTo(240, legendY + 16);
             graphCtx.stroke();
             graphCtx.setLineDash([]);
 
-            graphCtx.fillStyle = "black";
-            graphCtx.fillText("Setpoint / zero error", 360, legendY + 26);
+            graphCtx.fillStyle = canvasColors.text;
+            graphCtx.fillText("Zero error", 248, legendY + 21);
         }
 
+        /*
+            Main animation loop. Each frame:
+            1. Draws the current target.
+            2. Applies PID output to velocity.
+            3. Applies damping and moves the robot.
+            4. Records graph data until the robot has settled.
+        */
         function update() {
+            resizeCanvasesToDisplaySize();
+
             robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
+            drawDrivingSurface();
 
             // Draw target
             robotCtx.beginPath();
-            robotCtx.arc(targetX, targetY, 10, 0, Math.PI * 2);
-            robotCtx.fillStyle = "red";
+            robotCtx.arc(targetX, targetY, 15, 0, Math.PI * 2);
+            robotCtx.fillStyle = canvasColors.targetGlow;
+            robotCtx.fill();
+
+            robotCtx.beginPath();
+            robotCtx.arc(targetX, targetY, 9, 0, Math.PI * 2);
+            robotCtx.fillStyle = canvasColors.target;
             robotCtx.fill();
 
             // PID controls velocity
@@ -307,8 +760,7 @@
             robotY += velocityY;
 
             // Draw robot
-            robotCtx.fillStyle = "blue";
-            robotCtx.fillRect(robotX - 20, robotY - 20, 40, 40);
+            drawRobot(robotX, robotY);
 
             // Error calculations
             var errorX = targetX - robotX;
@@ -337,6 +789,7 @@
             requestAnimationFrame(update);
         }
 
+        resizeCanvasesToDisplaySize();
         update();
     </script>
 </body>
