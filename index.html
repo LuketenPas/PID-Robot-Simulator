@@ -105,6 +105,54 @@
             velocityY = 0;
         }
 
+        function setupPIDInput(numberId, sliderId, min, max, updateValue) {
+            var numberInput = document.getElementById(numberId);
+            var sliderInput = document.getElementById(sliderId);
+
+            numberInput.addEventListener("input", function() {
+                // Let people type unfinished decimals like ".", "0.", or ".08"
+                if (
+                    this.value === "" ||
+                    this.value === "." ||
+                    this.value === "0." ||
+                    this.value === "-"
+                ) {
+                    return;
+                }
+
+                var parsed = parseFloat(this.value);
+
+                if (!isNaN(parsed)) {
+                    // While typing, update the PID value, but do not rewrite the box.
+                    // Rewriting the box here is what caused decimals to auto-jump.
+                    updateValue(parsed);
+                }
+            });
+
+            numberInput.addEventListener("change", function() {
+                var parsed = parseFloat(this.value);
+
+                if (isNaN(parsed)) {
+                    parsed = min;
+                }
+
+                parsed = clamp(parsed, min, max);
+
+                updateValue(parsed);
+                this.value = parsed;
+                sliderInput.value = parsed;
+            });
+
+            sliderInput.addEventListener("input", function() {
+                var parsed = parseFloat(this.value);
+
+                if (!isNaN(parsed)) {
+                    updateValue(parsed);
+                    numberInput.value = parsed;
+                }
+            });
+        }
+
         robotCanvas.addEventListener("click", function(event) {
             var rect = robotCanvas.getBoundingClientRect();
 
@@ -129,70 +177,16 @@
             graphPaused = false;
         });
 
-        // kP input
-        document.getElementById("kpValue").addEventListener("input", function() {
-            var parsed = parseFloat(this.value);
-
-            if (!isNaN(parsed)) {
-                parsed = clamp(parsed, 0, 1);
-
-                kP = parsed;
-                this.value = parsed;
-                document.getElementById("kpSlider").value = parsed;
-            }
+        setupPIDInput("kpValue", "kpSlider", 0, 1, function(value) {
+            kP = value;
         });
 
-        document.getElementById("kpSlider").addEventListener("input", function() {
-            var parsed = parseFloat(this.value);
-
-            if (!isNaN(parsed)) {
-                kP = parsed;
-                document.getElementById("kpValue").value = parsed;
-            }
+        setupPIDInput("kiValue", "kiSlider", 0, 0.01, function(value) {
+            kI = value;
         });
 
-        // kI input
-        document.getElementById("kiValue").addEventListener("input", function() {
-            var parsed = parseFloat(this.value);
-
-            if (!isNaN(parsed)) {
-                parsed = clamp(parsed, 0, 0.01);
-
-                kI = parsed;
-                this.value = parsed;
-                document.getElementById("kiSlider").value = parsed;
-            }
-        });
-
-        document.getElementById("kiSlider").addEventListener("input", function() {
-            var parsed = parseFloat(this.value);
-
-            if (!isNaN(parsed)) {
-                kI = parsed;
-                document.getElementById("kiValue").value = parsed;
-            }
-        });
-
-        // kD input
-        document.getElementById("kdValue").addEventListener("input", function() {
-            var parsed = parseFloat(this.value);
-
-            if (!isNaN(parsed)) {
-                parsed = clamp(parsed, 0, 1.5);
-
-                kD = parsed;
-                this.value = parsed;
-                document.getElementById("kdSlider").value = parsed;
-            }
-        });
-
-        document.getElementById("kdSlider").addEventListener("input", function() {
-            var parsed = parseFloat(this.value);
-
-            if (!isNaN(parsed)) {
-                kD = parsed;
-                document.getElementById("kdValue").value = parsed;
-            }
+        setupPIDInput("kdValue", "kdSlider", 0, 1.5, function(value) {
+            kD = value;
         });
 
         function calculatePIDX() {
