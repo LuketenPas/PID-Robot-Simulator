@@ -2,117 +2,193 @@
 <html>
 <head>
     <title>PID Robot Simulator</title>
+
     <style>
         input[type="range"] {
             width: 800px;
             height: 20px;
         }
+
         label {
+            font-size: 20px;
+        }
+
+        input[type="number"] {
+            width: 90px;
             font-size: 20px;
         }
     </style>
 </head>
+
 <body>
     <canvas id="robotCanvas" width="1200" height="600" style="border:1px solid black; display:inline-block;"></canvas>
     <canvas id="graphCanvas" width="600" height="600" style="border:1px solid black; display:inline-block;"></canvas>
+
     <br>
+
     <label>kP: </label>
-    <input type="number" id="kpValue" value="0.01" step="0.001" style="width:80px; font-size:20px;">
+    <input type="number" id="kpValue" min="0" max="1" value="0.01" step="0.001">
     <input type="range" id="kpSlider" min="0" max="1" step="0.001" value="0.01">
+
     <br>
+
     <label>kI: </label>
-    <input type="number" id="kiValue" value="0.0" step="0.0001" style="width:80px; font-size:20px;">
-    <input type="range" id="kiSlider" min="0" max="0.01" step=".0001" value="0">
+    <input type="number" id="kiValue" min="0" max="0.01" value="0.0" step="0.00001">
+    <input type="range" id="kiSlider" min="0" max="0.01" step="0.00001" value="0">
+
     <br>
+
     <label>kD: </label>
-    <input type="number" id="kdValue" value="0.0" step="0.0001" style="width:80px; font-size:20px;">
-    <input type="range" id="kdSlider" min="0" max="2.0" step=".0001" value="0">
+    <input type="number" id="kdValue" min="0" max="1.5" value="0.08" step="0.001">
+    <input type="range" id="kdSlider" min="0" max="1.5" step="0.001" value="0.08">
 
     <script>
         var robotCanvas = document.getElementById("robotCanvas");
         var robotCtx = robotCanvas.getContext("2d");
+
         var graphCanvas = document.getElementById("graphCanvas");
         var graphCtx = graphCanvas.getContext("2d");
 
-        var kP = .01;
+        // PID values
+        var kP = 0.01;
         var kI = 0.0;
-        var kD = 0.0;
+        var kD = 0.08;
 
+        // Target position
         var targetX = 600;
         var targetY = 300;
+
+        // Robot position
         var robotX = 0;
         var robotY = 0;
+
+        // PID memory
         var previousErrorX = 0;
         var previousErrorY = 0;
+
         var integralX = 0;
         var integralY = 0;
+
+        // Robot velocity
         var velocityX = 0;
         var velocityY = 0;
 
-        var setpoint = 0; 
-        var valueHistory = []; 
+        // Graph variables
+        var setpoint = 0;
+        var valueHistory = [];
+
         var dirX = 0;
         var dirY = 0;
+
         var graphPaused = false;
 
+        // Settling settings
         var errorTolerance = 2;
         var velocityTolerance = 0.05;
 
+        // Graph settings
+        var graphSpeed = 4;
+        var graphZoom = 1.0;
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function resetPIDMemory() {
+            previousErrorX = 0;
+            previousErrorY = 0;
+
+            integralX = 0;
+            integralY = 0;
+
+            velocityX = 0;
+            velocityY = 0;
+        }
+
         robotCanvas.addEventListener("click", function(event) {
             var rect = robotCanvas.getBoundingClientRect();
+
             targetX = event.clientX - rect.left;
             targetY = event.clientY - rect.top;
+
             var dx = targetX - robotX;
             var dy = targetY - robotY;
+
             setpoint = Math.sqrt(dx * dx + dy * dy);
+
+            if (setpoint === 0) {
+                return;
+            }
+
             dirX = dx / setpoint;
             dirY = dy / setpoint;
+
+            resetPIDMemory();
+
             valueHistory = [];
             graphPaused = false;
         });
 
+        // kP input
         document.getElementById("kpValue").addEventListener("input", function() {
             var parsed = parseFloat(this.value);
+
             if (!isNaN(parsed)) {
+                parsed = clamp(parsed, 0, 1);
+
                 kP = parsed;
+                this.value = parsed;
                 document.getElementById("kpSlider").value = parsed;
             }
         });
 
         document.getElementById("kpSlider").addEventListener("input", function() {
             var parsed = parseFloat(this.value);
+
             if (!isNaN(parsed)) {
                 kP = parsed;
                 document.getElementById("kpValue").value = parsed;
             }
         });
 
+        // kI input
         document.getElementById("kiValue").addEventListener("input", function() {
             var parsed = parseFloat(this.value);
+
             if (!isNaN(parsed)) {
+                parsed = clamp(parsed, 0, 0.01);
+
                 kI = parsed;
+                this.value = parsed;
                 document.getElementById("kiSlider").value = parsed;
             }
         });
 
         document.getElementById("kiSlider").addEventListener("input", function() {
             var parsed = parseFloat(this.value);
+
             if (!isNaN(parsed)) {
                 kI = parsed;
                 document.getElementById("kiValue").value = parsed;
             }
         });
 
+        // kD input
         document.getElementById("kdValue").addEventListener("input", function() {
             var parsed = parseFloat(this.value);
+
             if (!isNaN(parsed)) {
+                parsed = clamp(parsed, 0, 1.5);
+
                 kD = parsed;
+                this.value = parsed;
                 document.getElementById("kdSlider").value = parsed;
             }
         });
 
         document.getElementById("kdSlider").addEventListener("input", function() {
             var parsed = parseFloat(this.value);
+
             if (!isNaN(parsed)) {
                 kD = parsed;
                 document.getElementById("kdValue").value = parsed;
@@ -121,9 +197,12 @@
 
         function calculatePIDX() {
             var error = targetX - robotX;
-            var maxIntegral = 50;
+
+            var maxIntegral = 200;
+
             integralX += error;
-            integralX = Math.max(-maxIntegral, Math.min(maxIntegral, integralX));
+            integralX = clamp(integralX, -maxIntegral, maxIntegral);
+
             var derivative = error - previousErrorX;
             previousErrorX = error;
 
@@ -132,9 +211,12 @@
 
         function calculatePIDY() {
             var error = targetY - robotY;
-            var maxIntegral = 50;
+
+            var maxIntegral = 200;
+
             integralY += error;
-            integralY = Math.max(-maxIntegral, Math.min(maxIntegral, integralY));
+            integralY = clamp(integralY, -maxIntegral, maxIntegral);
+
             var derivative = error - previousErrorY;
             previousErrorY = error;
 
@@ -143,9 +225,6 @@
 
         function drawGraph() {
             var zeroY = 200;
-            var graphSpeed = 6;
-            var zoom = 1;
-
             var legendY = graphCanvas.height - 70;
 
             graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
@@ -165,9 +244,9 @@
             for (var i = 0; i < valueHistory.length; i++) {
                 var x = i * graphSpeed;
 
-                var y = zeroY + (valueHistory[i] / setpoint) * (legendY - zeroY) * zoom;
+                var y = zeroY + (valueHistory[i] / setpoint) * (legendY - zeroY) * graphZoom;
 
-                y = Math.max(0, Math.min(legendY - 10, y));
+                y = clamp(y, 0, legendY - 10);
 
                 if (i === 0) {
                     graphCtx.moveTo(x, y);
@@ -186,7 +265,7 @@
             graphCtx.lineTo(graphCanvas.width, legendY);
             graphCtx.stroke();
 
-            // Key underneath graph
+            // Graph key
             graphCtx.font = "18px Arial";
             graphCtx.fillStyle = "black";
             graphCtx.fillText("Graph Key", 20, legendY + 25);
@@ -213,19 +292,31 @@
         }
 
         function update() {
-            robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height)
+            robotCtx.clearRect(0, 0, robotCanvas.width, robotCanvas.height);
+
+            // Draw target
             robotCtx.beginPath();
             robotCtx.arc(targetX, targetY, 10, 0, Math.PI * 2);
             robotCtx.fillStyle = "red";
             robotCtx.fill();
+
+            // PID controls velocity
             velocityX += calculatePIDX();
             velocityY += calculatePIDY();
+
+            // Friction / damping
             velocityX *= 0.8;
             velocityY *= 0.8;
+
+            // Move robot
             robotX += velocityX;
             robotY += velocityY;
+
+            // Draw robot
             robotCtx.fillStyle = "blue";
-            robotCtx.fillRect(robotX-20, robotY-20, 40, 40);
+            robotCtx.fillRect(robotX - 20, robotY - 20, 40, 40);
+
+            // Error calculations
             var errorX = targetX - robotX;
             var errorY = targetY - robotY;
 
@@ -234,20 +325,21 @@
 
             var currentValue = errorX * dirX + errorY * dirY;
 
-            if (!graphPaused) {
+            if (!graphPaused && setpoint !== 0) {
                 valueHistory.push(currentValue);
 
-                if (valueHistory.length > graphCanvas.width / 4) {
+                if (valueHistory.length > graphCanvas.width / graphSpeed) {
                     valueHistory.shift();
                 }
 
-                // Pause only when the robot is close AND nearly stopped
+                // Stop graph only when robot is close AND basically stopped
                 if (distanceError < errorTolerance && velocityMagnitude < velocityTolerance) {
                     graphPaused = true;
                 }
             }
 
             drawGraph();
+
             requestAnimationFrame(update);
         }
 
